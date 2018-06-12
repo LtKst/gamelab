@@ -1,16 +1,28 @@
-﻿using Microsoft.Xna.Framework;
+﻿using System;
+using System.CodeDom;
+using System.Linq;
+using Kwartet.Desktop.Core;
+using Kwartet.Desktop.Scenes;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 
-namespace AssBoy.Desktop
+namespace Kwartet.Desktop
 {
     /// <summary>
-    /// This is the main type for your game.
+    /// This is the mains     type for your game.
     /// </summary>
     public class Game1 : Microsoft.Xna.Framework.Game
     {
         GraphicsDeviceManager graphics;
         SpriteBatch spriteBatch;
+        
+        private WebServer server;
+        private Desktop.Game _game;
+        private SceneManager SceneManager { get; set; }
+        
+        public static SpriteFont font { get; private set; }
+        public RenderTarget2D renderTarget { get; private set; }
 
         public Game1()
         {
@@ -27,8 +39,36 @@ namespace AssBoy.Desktop
         protected override void Initialize()
         {
             // TODO: Add your initialization logic here
-
+            server = new WebServer();
+            renderTarget = new RenderTarget2D(GraphicsDevice, 1280, 720);
+            Screen.InitScreen(renderTarget);
+            _game = new Game(server, Content);            
+            _game.Start();
+            
+            server.Subscribe(ClientToServerStatus.Join, (a) =>
+            {
+                if (_game._playersConnected.Count >= 4)
+                {
+                    DropConnection(a);
+                    return;
+                }
+                int playerNum = _game.PlayerJoin(new Player(server.Server, a.Data["name"].ToString(), a.ID));
+                var joinInfo = new ServerStatusHandler.JoinInfo(playerNum);
+                string json = new 
+                    ServerStatusHandler.ServerMessage<ServerStatusHandler.JoinInfo>
+                    (ServerToClientStatuses.Unknown, joinInfo).Build();
+                a.ServerStatus.Send(json);
+            });
+            
             base.Initialize();
+        }
+
+        private void DropConnection(ServerStatusHandler.ClientMessage clientMessage)
+        {
+            clientMessage.ServerStatus.Send(
+                new ServerStatusHandler.ServerMessage
+                    <ServerStatusHandler.EmptyInfo>(ServerToClientStatuses.DropConnection, new ServerStatusHandler.EmptyInfo()).Build());
+            clientMessage.ServerStatus.DropConnection();
         }
 
         /// <summary>
@@ -39,7 +79,11 @@ namespace AssBoy.Desktop
         {
             // Create a new SpriteBatch, which can be used to draw textures.
             spriteBatch = new SpriteBatch(GraphicsDevice);
+            font = Content.Load<SpriteFont>("spritefont");
             // TODO: use this.Content to load your game content here
+            
+            SceneManager = new SceneManager(Content, GraphicsDevice, spriteBatch, _game, server);
+            SceneManager.SwitchScene(typeof(MainMenu));
         }
 
         /// <summary>
@@ -61,7 +105,9 @@ namespace AssBoy.Desktop
             if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
                 Exit();
 
-            // TODO: Add your update logic here
+            Scene scene = SceneManager.CurrentScene;
+
+            scene?.Update(gameTime);
 
             base.Update(gameTime);
         }
@@ -72,10 +118,25 @@ namespace AssBoy.Desktop
         /// <param name="gameTime">Provides a snapshot of timing values.</param>
         protected override void Draw(GameTime gameTime)
         {
+            GraphicsDevice.SetRenderTarget(renderTarget);
             GraphicsDevice.Clear(Color.YellowGreen);
+            
+            Scene scene = SceneManager.CurrentScene;
+            spriteBatch.Begin();
+            string names = "";
+            
+            _game._playersConnected.ForEach(x=>names += x.Name + "\n");
 
-            // TODO: Add your drawing code here
-
+            scene?.Draw(gameTime);
+            
+            spriteBatch.End();
+            
+            GraphicsDevice.SetRenderTarget(null);
+            
+            spriteBatch.Begin();
+            spriteBatch.Draw(renderTarget, GraphicsDevice.Viewport.TitleSafeArea, Color.White);
+            spriteBatch.End();
+            
             base.Draw(gameTime);
         }
     }
