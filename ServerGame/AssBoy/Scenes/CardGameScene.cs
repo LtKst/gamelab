@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using Kwartet.Desktop.Cards;
 using Kwartet.Desktop.Core;
 using Kwartet.Desktop.Online;
@@ -13,13 +14,21 @@ namespace Kwartet.Desktop.Scenes
     {
         private int currentPlayerIndex = 0;
         private Random random = new Random();
+
+        private const float questionDisplayTime = 10.0f;
+        private float currentDisplayTime = questionDisplayTime +1;
+        private string question = "";
+        private Player.Corner askedCorner;
+
+        private string response = "";
+        private Player.Corner responseCorner;
         
         public static readonly Dictionary<Player.Corner, Vector2> CornerPositions = new Dictionary<Player.Corner, Vector2>()
         {
             {Player.Corner.UpLeft, new Vector2(100,50)},
-            {Player.Corner.UpRight, new Vector2(Screen.Width - 100, 50)},
-            {Player.Corner.DownLeft, new Vector2(100, Screen.Height - 50)},
-            {Player.Corner.DownRight, new Vector2(Screen.Width - 200, Screen.Height - 300)},
+            {Player.Corner.UpRight, new Vector2(Screen.Width - 200, 50)},
+            {Player.Corner.DownLeft, new Vector2(100, Screen.Height - 250)},
+            {Player.Corner.DownRight, new Vector2(Screen.Width - 200, Screen.Height - 250)},
         };
 
         public override void Initialize()
@@ -38,9 +47,11 @@ namespace Kwartet.Desktop.Scenes
                 player.OrderCardPositions();
             }
             
+            Game.SortCardsOnTable();
+            
             // let a random player start
             currentPlayerIndex = random.Next(Game.PlayersConnected.Count);
-            AnnouncePlayerTurnStart(true);
+            AnnouncePlayerTurnStart();
             
             // subscribe to a question of a player ( asking for a card )
             WebServer.Subscribe(ClientToServerStatus.Question, OnQuestion);
@@ -60,6 +71,11 @@ namespace Kwartet.Desktop.Scenes
                 x.ServerCard.cardName.ToLower() == processedCard.name.ToLower() &&
                 x.ServerCard.category.ToString().ToLower() == processedCard.category.ToLower());
 
+            currentDisplayTime = 0;
+            askedCorner = player.PlayerCorner;
+            responseCorner = askedPlayer.PlayerCorner;
+            question = $"{askedPlayer.Name},\nHeb jij van {processedCard.category},\n{processedCard.name}?";
+            
             bool foundCard = card != null;
 
             if (foundCard)
@@ -67,12 +83,11 @@ namespace Kwartet.Desktop.Scenes
                 askedPlayer.RemoveCard(card);
                 player.AddCard(card);
                 
-                /// TODO : Start the card animation where it show up on the screen first.
-
                 card.ShowOnCenter(player);
+
+                response = "yep verdomme man";
                 
-                
-                AnnouncePlayerTurnStart(true); // Don't announce player turn
+                AnnouncePlayerTurnStart();
             }
             else
             {
@@ -80,12 +95,18 @@ namespace Kwartet.Desktop.Scenes
 
                 var poppedCard = Game.PopCard();
                 if (poppedCard != null) player.AddCard(poppedCard);
+                Game.SortCardsOnTable(); // sort the cards on the table.
+
+                response = "haha nee";
+                
                 StartNextTurn();
             }
         }
 
         private void StartNextTurn()
         {
+            AnnouncePlayerTurnEnd();
+            
             if (++currentPlayerIndex == Game.PlayersConnected.Count) currentPlayerIndex = 0;
 
             AnnouncePlayerTurnStart();
@@ -101,12 +122,23 @@ namespace Kwartet.Desktop.Scenes
             return (id, name, category);
         }
 
-        private void AnnouncePlayerTurnStart(bool skipTurnEnd = false)
+        private void AnnouncePlayerTurnStart()
         {
-            if (!skipTurnEnd)
-                AnnouncePlayerTurnEnd();
+            // Before announcing the player turn start, check if the player even has any cards left
+            // If he does not, give him a card and end his turn. If there are no remaining cards left on the table,
+            // he's out and will just completely be skipped as life dictates.
+
+            var player = Game.PlayersConnected[currentPlayerIndex];
             
-            string id = Game.PlayersConnected[currentPlayerIndex].ConnectionInfo.ID;
+            if (player.CardsInHand.Count == 0)
+            {
+                var popCard = Game.PopCard();
+                if (popCard != null) player.AddCard(popCard);
+                StartNextTurn();
+                return; // noob! No new turn for you.
+            }
+            
+            string id = player.ConnectionInfo.ID;
             var info = new ServerMessage<ServerStatusHandler.TurnStartedInfo>(ServerToClientStatuses.TurnStarted,
                 new ServerStatusHandler.TurnStartedInfo(Game.PlayersConnected.ToArray()));
             
@@ -115,26 +147,13 @@ namespace Kwartet.Desktop.Scenes
 
         private void AnnouncePlayerTurnEnd()
         {
-            // TODO : Announce END turn
-            
             string id = Game.PlayersConnected[currentPlayerIndex].ConnectionInfo.ID;
             
             WebServer.SendToPlayer(id, new ServerMessage<ServerStatusHandler.EmptyInfo>
                 (ServerToClientStatuses.TurnEnded, new ServerStatusHandler.EmptyInfo()));
         }
-        
-        private void AnnounceCards()
-        {
-            foreach (var player in Game.PlayersConnected)
-            {
-                ServerCard[] cards = player.CardsInHand.Select(x => x.ServerCard).ToArray();
-                var serverMessage = new ServerMessage<ServerStatusHandler.CardsReceiveInfo>
-                    (ServerToClientStatuses.GetCard, new ServerStatusHandler.CardsReceiveInfo(cards));
-                player.ConnectionInfo.Server.Send(serverMessage);
-            }
-        }
 
-        public override void Update(GameTime dt)
+        public override void BeforeUpdate(GameTime dt)
         {
             foreach (var player in Game.PlayersConnected)
             {
@@ -143,17 +162,65 @@ namespace Kwartet.Desktop.Scenes
                     card.Update((float)dt.ElapsedGameTime.TotalSeconds);
                 }
             }
+
+            foreach (var carad in Game.CardsOnTable)
+            {
+                carad.Update((float)dt.ElapsedGameTime.TotalSeconds);
+            }
+
+            currentDisplayTime += (float) dt.ElapsedGameTime.TotalSeconds;
         }
 
-        public override void AfterDraw(GameTime dt)
+        public override void BeforeDraw(GameTime dt)
         {
-            // draw all player names in their respective corners
-            foreach (var player in Game.PlayersConnected)
+            // Draw all cards on the table.
+
+            for (int i = Game.CardsOnTable.Count - 1; i >= 0; i--) 
             {
+                Game.CardsOnTable[i].Draw(SpriteBatch);
+            }   
+            
+            // draw all player cards, name and their kwartet amounts
+            // in their respective corners
+            foreach (var player in Game.PlayersConnected)
+            {                
                 foreach (var card in player.CardsInHand)
                 {
                     card.Draw(SpriteBatch);
                 }
+                
+                bool below = player.PlayerCorner.ToString().StartsWith("Down");
+                Vector2 cornerPosition = CornerPositions[player.PlayerCorner];
+
+                cornerPosition.Y += below ? (200) : -40;
+
+                SpriteBatch.DrawString(Game1.font, player.Name, cornerPosition, Color.Black);
+
+                cornerPosition = CornerPositions[player.PlayerCorner];
+                cornerPosition.Y -= below ? (40) : -200;
+                
+                SpriteBatch.DrawString(Game1.font, $"Kwartetten: {player.Quartets}", cornerPosition, Color.Black);
+            }
+            
+            // last but least, draw the question if needed.
+            if (currentDisplayTime <= questionDisplayTime)
+            {
+                Vector2 GetCornerPos(Player.Corner corner)
+                {
+                    Vector2 cornerPosition = CornerPositions[corner];
+                    string s = corner.ToString().ToLower();
+
+                    if (s.Contains("left")) cornerPosition.X += 200;
+                    else cornerPosition.X -= 400;
+
+                    return cornerPosition;
+                }
+
+                var c = GetCornerPos(askedCorner);
+                var b = GetCornerPos(responseCorner);
+                
+                SpriteBatch.DrawString(Game1.font, question, c, Color.Black);
+                SpriteBatch.DrawString(Game1.font, response, b, Color.Black);
             }
         }
     }
