@@ -1,9 +1,8 @@
 # Input/Output
 Contributors:
 
+  - **Antonio Bottelier**
   - Koen Sparrenboom
-  - Antonio Bottelier
-  - Dave van Staden
 
 # Game Concept:
 
