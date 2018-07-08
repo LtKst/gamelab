@@ -7,19 +7,15 @@ Contributors:
   - **Antonio Bottelier**
   - Koen Sparrenboom
 
-# Game Concept:
+# Ontwerp:
 
-   [Presentation](https://docs.google.com/presentation/d/1aiOqxanbgnC7Jiv5hfRYV8YSR2mZAFUWqbYjQsOXilQ/edit?usp=sharing)
+Ooit van dat spelletje kwartet gehoord? Dat. Via mobiel, en computer. Denk aan Jackbox, maar dan kwartet. En je moet verbonden zijn met hetzelfde netwerk.
 
-  - Op hetzelfde netwerk verbinden met een computer om te kwartetten met andere op hetzelfde netwerk
-  - Online ( Kan met andere 42069 ge-portforward wordt. Maar die hebben dan geen scherm. )
+# Portfolio:
 
-
-Software/talen gebruikt:
-  - C#
-  - Visual Studio / Rider
-  - MonoGame
-  - HTML5
-
+  - [Onderzoek](#)
+  - [Ontwerp](#)
+  - [Testrapportage](#)
+  - [Presentatie](https://docs.google.com/presentation/d/1jU-m4JodX7zlJp4S6nIKw9V4PHwR9yWsYWbXvnqjf7c/edit?usp=sharing)
 
 # this is epic
