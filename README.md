@@ -1,4 +1,7 @@
 # Input/Output
+
+![poster](https://github.com/LtKst/gamelab/blob/master/poster.png)
+
 Contributors:
 
   - **Antonio Bottelier**
